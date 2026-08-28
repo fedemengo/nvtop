@@ -48,6 +48,42 @@ static unsigned int sizeof_device_field[device_field_count] = {
     [device_l2features] = 11, [device_execengines] = 11,
 };
 
+// Hostname shown at the right end of the shortcut bar, '@' prefixed. Resolved once, on first draw.
+// NVTOP_HOSTNAME overrides it; setting it empty hides the hostname altogether.
+static char nvtop_hostname[257];
+static bool nvtop_hostname_resolved = false;
+
+void draw_shortcut_bar_hostname(WINDOW *win) {
+  if (!nvtop_hostname_resolved) {
+    const char *hostname_override = getenv("NVTOP_HOSTNAME");
+    nvtop_hostname[0] = '@';
+    if (hostname_override)
+      snprintf(nvtop_hostname + 1, sizeof(nvtop_hostname) - 1, "%s", hostname_override);
+    else if (gethostname(nvtop_hostname + 1, sizeof(nvtop_hostname) - 1) != 0)
+      nvtop_hostname[1] = '\0';
+    // gethostname is allowed to truncate without terminating the string
+    nvtop_hostname[sizeof(nvtop_hostname) - 1] = '\0';
+    nvtop_hostname_resolved = true;
+  }
+  if (nvtop_hostname[1] == '\0')
+    return;
+  int rows, cols;
+  getmaxyx(win, rows, cols);
+  (void)rows;
+  int cur_row, cur_col;
+  getyx(win, cur_row, cur_col);
+  (void)cur_row;
+  // Two blank columns on each side. The trailing ones also keep the write away from the
+  // bottom-right corner, where ncurses cannot place a character.
+  int start_col = cols - (int)strlen(nvtop_hostname) - 2;
+  // Drop the hostname entirely rather than overwrite the shortcuts
+  if (start_col - 2 < cur_col)
+    return;
+  wattr_set(win, A_NORMAL, magenta_color, NULL);
+  mvwprintw(win, 0, start_col, "%s", nvtop_hostname);
+  wstandend(win);
+}
+
 static unsigned int sizeof_process_field[process_field_count] = {
     [process_pid] = 7,       [process_user] = 4,          [process_gpu_id] = 3,   [process_type] = 8,
     [process_gpu_rate] = 4,  [process_enc_rate] = 4,      [process_dec_rate] = 4,
@@ -1630,8 +1666,8 @@ static void draw_process_shortcuts(struct nvtop_interface *interface) {
         continue;
 
       if (process_field_displayed_count(interface->options.process_fields_displayed) > 0 || (i != 1 && i != 2)) {
-        wprintw(win, "F%s", option_selection_hidden_num[i]);
-        wattr_set(win, A_STANDOUT, cyan_color, NULL);
+        wprintw(win, "F%s: ", option_selection_hidden_num[i]);
+        wattr_set(win, A_NORMAL, cyan_color, NULL);
         wprintw(win, "%-*s", option_selection_width, option_selection_hidden[i]);
         wstandend(win);
       }
@@ -1639,16 +1675,16 @@ static void draw_process_shortcuts(struct nvtop_interface *interface) {
     break;
   case nvtop_option_state_kill:
     for (size_t i = 0; i < ARRAY_SIZE(option_selection_kill); ++i) {
-      wprintw(win, "%s", option_selection_kill[i][0]);
-      wattr_set(win, A_STANDOUT, cyan_color, NULL);
+      wprintw(win, "%s: ", option_selection_kill[i][0]);
+      wattr_set(win, A_NORMAL, cyan_color, NULL);
       wprintw(win, "%-*s", option_selection_width, option_selection_kill[i][1]);
       wstandend(win);
     }
     break;
   case nvtop_option_state_sort_by:
     for (size_t i = 0; i < ARRAY_SIZE(option_selection_sort); ++i) {
-      wprintw(win, "%s", option_selection_sort[i][0]);
-      wattr_set(win, A_STANDOUT, cyan_color, NULL);
+      wprintw(win, "%s: ", option_selection_sort[i][0]);
+      wattr_set(win, A_NORMAL, cyan_color, NULL);
       wprintw(win, "%-*s", option_selection_width, option_selection_sort[i][1]);
       wstandend(win);
     }
@@ -1657,10 +1693,7 @@ static void draw_process_shortcuts(struct nvtop_interface *interface) {
     break;
   }
   wclrtoeol(win);
-  unsigned int cur_col, tmp;
-  (void)tmp;
-  getyx(win, tmp, cur_col);
-  mvwchgat(win, 0, cur_col, -1, A_STANDOUT, cyan_color, NULL);
+  draw_shortcut_bar_hostname(win);
   wnoutrefresh(win);
   interface->process.option_window.previous_state = current_state;
 }

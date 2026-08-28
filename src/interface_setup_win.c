@@ -656,16 +656,13 @@ void draw_setup_window_shortcuts(struct nvtop_interface *interface) {
 
   wmove(window, 0, 0);
   for (size_t i = 0; i < ARRAY_SIZE(setup_window_shortcuts); ++i) {
-    wprintw(window, "%s", setup_window_shortcuts[i]);
-    wattr_set(window, A_STANDOUT, cyan_color, NULL);
+    wprintw(window, "%s: ", setup_window_shortcuts[i]);
+    wattr_set(window, A_NORMAL, cyan_color, NULL);
     wprintw(window, "%s ", setup_window_shortcut_description[i]);
     wstandend(window);
   }
   wclrtoeol(window);
-  unsigned int cur_col, tmp;
-  (void)tmp;
-  getyx(window, tmp, cur_col);
-  mvwchgat(window, 0, cur_col, -1, A_STANDOUT, cyan_color, NULL);
+  draw_shortcut_bar_hostname(window);
   wnoutrefresh(window);
 }
 
