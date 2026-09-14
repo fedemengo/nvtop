@@ -16,6 +16,9 @@ chmod +x ~/.local/bin/nvtop
 `~/.local/bin` has to be on your `PATH`. If a distribution package is also
 installed, check which one you get with `command -v nvtop`.
 
+Releases are cut by hand, so the binary can lag `master`. The release notes
+say which commit it was built from; build from source to get anything newer.
+
 ## From source
 
 Build dependencies: CMake, a C compiler, ncurses (wide-character build),
