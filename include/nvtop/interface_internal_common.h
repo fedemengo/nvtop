@@ -38,6 +38,7 @@ enum nvtop_option_window_state {
   nvtop_option_state_hidden,
   nvtop_option_state_kill,
   nvtop_option_state_sort_by,
+  nvtop_option_state_filter,
 };
 
 enum interface_color {
@@ -97,6 +98,7 @@ struct process_window {
   WINDOW *process_with_option_win;
   unsigned selected_row;
   pid_t selected_pid;
+  char filter[64]; // Live filter query, empty string when no process is filtered out
   struct option_window option_window;
 };
 

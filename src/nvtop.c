@@ -76,7 +76,9 @@ static const char helpstring[] = "Available options:\n"
                                  "  -h --help         : Print help and exit\n"
                                  "  -s --snapshot     : Output the current gpu stats without ncurses"
                                  "(useful for scripting)\n"
-                                 "  -l --loop         : Output the current gpu stats without ncurses in a loop\n";
+                                 "  -l --loop         : Output the current gpu stats without ncurses in a loop\n"
+                                 "  -t --type         : Show only processes of this type: graphics, compute or all\n"
+                                 "  -u --user         : Show only the processes of this user\n";
 
 static const char versionString[] = "nvtop version " NVTOP_VERSION_STRING;
 
@@ -95,10 +97,12 @@ static const struct option long_opts[] = {
     {.name = "reverse-abs", .has_arg = no_argument, .flag = NULL, .val = 'r'},
     {.name = "snapshot", .has_arg = no_argument, .flag = NULL, .val = 's'},
     {.name = "loop", .has_arg = no_argument, .flag = NULL, .val = 'l'},
+    {.name = "type", .has_arg = required_argument, .flag = NULL, .val = 't'},
+    {.name = "user", .has_arg = required_argument, .flag = NULL, .val = 'u'},
     {0, 0, 0, 0},
 };
 
-static const char opts[] = "hvd:c:CfE:pPrisl";
+static const char opts[] = "hvd:c:CfE:pPrislt:u:";
 
 int main(int argc, char **argv) {
   (void)setlocale(LC_CTYPE, "");
@@ -117,6 +121,8 @@ int main(int argc, char **argv) {
   bool loop_snapshot = false;
   double encode_decode_hide_time = -1.;
   char *custom_config_file_path = NULL;
+  char *filter_user_option = NULL;
+  bool show_graphical_option = true, show_compute_option = true, filter_type_option_set = false;
   while (true) {
     int optchar = getopt_long(argc, argv, opts, long_opts, NULL);
     if (optchar == -1)
@@ -180,6 +186,20 @@ int main(int argc, char **argv) {
       break;
     case 'l':
       loop_snapshot = true;
+      break;
+    case 't':
+      if (strcmp(optarg, "graphics") == 0) {
+        show_compute_option = false;
+      } else if (strcmp(optarg, "compute") == 0) {
+        show_graphical_option = false;
+      } else if (strcmp(optarg, "all") != 0) {
+        fprintf(stderr, "Error: The process type must be one of graphics, compute or all\n");
+        exit(EXIT_FAILURE);
+      }
+      filter_type_option_set = true;
+      break;
+    case 'u':
+      filter_user_option = optarg;
       break;
     case ':':
     case '?':
@@ -295,6 +315,13 @@ int main(int argc, char **argv) {
     }
   }
   allDevicesOptions.hide_processes_list = hide_processes_option;
+  if (filter_type_option_set) {
+    allDevicesOptions.show_graphical_processes = show_graphical_option;
+    allDevicesOptions.show_compute_processes = show_compute_option;
+  }
+  if (filter_user_option)
+    snprintf(allDevicesOptions.filter_user_name, sizeof(allDevicesOptions.filter_user_name), "%s",
+             filter_user_option);
   if (encode_decode_timer_option_set) {
     allDevicesOptions.encode_decode_hiding_timer = encode_decode_hide_time;
     if (allDevicesOptions.encode_decode_hiding_timer < 0.)
@@ -356,6 +383,11 @@ int main(int argc, char **argv) {
     int input_char = getch();
     nvtop_get_current_time(&time_after_sleep);
     time_slept += nvtop_difftime(time_before_sleep, time_after_sleep) * 1000;
+    // The filter query swallows the keyboard, else typing "q" would quit instead of filtering
+    if (interface_is_typing_filter(interface) && input_char != ERR && input_char != KEY_RESIZE) {
+      interface_key(input_char, interface);
+      continue;
+    }
     switch (input_char) {
     case 27: // ESC
     {
@@ -380,6 +412,8 @@ int main(int argc, char **argv) {
       update_window_size_to_terminal_size(interface);
       break;
     case KEY_F(2):
+    case KEY_F(4):
+    case '/':
     case KEY_F(5):
     case KEY_F(9):
     case KEY_F(6):

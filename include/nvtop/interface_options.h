@@ -49,6 +49,9 @@ typedef struct nvtop_interface_option_struct {
                                                     // process list are displayed
   bool show_startup_messages;                       // True to show the startup messages
   bool filter_nvtop_pid;                            // Do not show nvtop pid in the processes list
+  bool show_graphical_processes;                    // Show the processes doing graphics work
+  bool show_compute_processes;                      // Show the processes doing compute work
+  char filter_user_name[64];                        // Show only this user processes, empty string for all users
   bool has_monitored_set_changed;                   // True if the set of monitored gpu was modified through the interface
   bool has_gpu_info_bar;                            // Show info bar with additional GPU parameters
   bool hide_processes_list;                         // Hide processes list

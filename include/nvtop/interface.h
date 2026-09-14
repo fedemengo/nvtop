@@ -51,6 +51,9 @@ bool is_escape_for_quit(struct nvtop_interface *inter);
 
 bool interface_freeze_processes(struct nvtop_interface *interface);
 
+// True while the process filter query is being typed and swallows every keypress
+bool interface_is_typing_filter(const struct nvtop_interface *interface);
+
 int interface_update_interval(const struct nvtop_interface *interface);
 
 bool show_information_messages(unsigned num_messages, const char **messages);

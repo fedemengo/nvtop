@@ -111,6 +111,8 @@ static unsigned get_plot_slot_labels(plot_info_to_draw to_draw, unsigned dev_id,
 enum setup_proc_list_options {
   setup_proc_list_hide_process_list,
   setup_proc_list_hide_nvtop_process,
+  setup_proc_list_show_graphical,
+  setup_proc_list_show_compute,
   setup_proc_list_sort_ascending,
   setup_proc_list_sort_by,
   setup_proc_list_display,
@@ -118,7 +120,9 @@ enum setup_proc_list_options {
 };
 
 static const char *setup_proc_list_option_description[setup_proc_list_options_count] = {
-    "Don't display the process list", "Hide nvtop in the process list", "Sort Ascending", "Sort by", "Field Displayed"};
+    "Don't display the process list", "Hide nvtop in the process list", "Show graphical processes",
+    "Show compute processes",         "Sort Ascending",                 "Sort by",
+    "Field Displayed"};
 
 static const char *setup_proc_list_value_descriptions[process_field_count] = {
     "Process Id",    "User name",        "Device Id", "Workload type",    "GPU usage", "Encoder usage",
@@ -540,6 +544,20 @@ static void draw_setup_window_proc_list(struct nvtop_interface *interface) {
       interface->setup_win.options_selected[0] == setup_proc_list_hide_nvtop_process) {
     mvwchgat(option_list_win, setup_proc_list_hide_nvtop_process + 1, 0, 3, A_STANDOUT, cyan_color, NULL);
   }
+  option_state = interface->options.show_graphical_processes;
+  mvwprintw(option_list_win, setup_proc_list_show_graphical + 1, 0, "[%c] %s", option_state_char(option_state),
+            setup_proc_list_option_description[setup_proc_list_show_graphical]);
+  if (interface->setup_win.indentation_level == 1 &&
+      interface->setup_win.options_selected[0] == setup_proc_list_show_graphical) {
+    mvwchgat(option_list_win, setup_proc_list_show_graphical + 1, 0, 3, A_STANDOUT, cyan_color, NULL);
+  }
+  option_state = interface->options.show_compute_processes;
+  mvwprintw(option_list_win, setup_proc_list_show_compute + 1, 0, "[%c] %s", option_state_char(option_state),
+            setup_proc_list_option_description[setup_proc_list_show_compute]);
+  if (interface->setup_win.indentation_level == 1 &&
+      interface->setup_win.options_selected[0] == setup_proc_list_show_compute) {
+    mvwchgat(option_list_win, setup_proc_list_show_compute + 1, 0, 3, A_STANDOUT, cyan_color, NULL);
+  }
   option_state = !interface->options.sort_descending_order;
   mvwprintw(option_list_win, setup_proc_list_sort_ascending + 1, 0, "[%c] %s", option_state_char(option_state),
             setup_proc_list_option_description[setup_proc_list_sort_ascending]);
@@ -884,6 +902,10 @@ void handle_setup_win_keypress(int keyId, struct nvtop_interface *interface) {
             interface->options.filter_nvtop_pid = !interface->options.filter_nvtop_pid;
           } else if (interface->setup_win.options_selected[0] == setup_proc_list_hide_process_list) {
             interface->options.hide_processes_list = !interface->options.hide_processes_list;
+          } else if (interface->setup_win.options_selected[0] == setup_proc_list_show_graphical) {
+            interface->options.show_graphical_processes = !interface->options.show_graphical_processes;
+          } else if (interface->setup_win.options_selected[0] == setup_proc_list_show_compute) {
+            interface->options.show_compute_processes = !interface->options.show_compute_processes;
           } else if (interface->setup_win.options_selected[0] == setup_proc_list_sort_by) {
             handle_setup_win_keypress(KEY_RIGHT, interface);
           }

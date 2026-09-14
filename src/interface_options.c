@@ -128,6 +128,9 @@ void alloc_interface_options_internals(char *config_location, unsigned num_devic
   options->has_monitored_set_changed = false;
   options->show_startup_messages = true;
   options->filter_nvtop_pid = true;
+  options->show_graphical_processes = true;
+  options->show_compute_processes = true;
+  options->filter_user_name[0] = '\0';
   options->has_gpu_info_bar = false;
   options->gpu_plot_color_idx[0] = 1;  // Cyan
   options->gpu_plot_color_idx[1] = 3;  // Yellow
@@ -188,6 +191,9 @@ static const unsigned plot_color_names_count = 7;
 static const char process_list_section[] = "ProcessListOption";
 static const char process_hide_nvtop_process_list[] = "HideNvtopProcessList";
 static const char process_hide_nvtop_process[] = "HideNvtopProcess";
+static const char process_show_graphical[] = "ShowGraphicalProcesses";
+static const char process_show_compute[] = "ShowComputeProcesses";
+static const char process_filter_user[] = "FilterUser";
 static const char process_value_sortby[] = "SortBy";
 static const char process_value_display_field[] = "DisplayField";
 static const char *process_sortby_vals[process_field_count + 1] = {
@@ -290,6 +296,25 @@ static int nvtop_option_ini_handler(void *user, const char *section, const char 
       if (strcmp(value, "false") == 0) {
         ini_data->options->filter_nvtop_pid = false;
       }
+    }
+    if (strcmp(name, process_show_graphical) == 0) {
+      if (strcmp(value, "true") == 0) {
+        ini_data->options->show_graphical_processes = true;
+      }
+      if (strcmp(value, "false") == 0) {
+        ini_data->options->show_graphical_processes = false;
+      }
+    }
+    if (strcmp(name, process_show_compute) == 0) {
+      if (strcmp(value, "true") == 0) {
+        ini_data->options->show_compute_processes = true;
+      }
+      if (strcmp(value, "false") == 0) {
+        ini_data->options->show_compute_processes = false;
+      }
+    }
+    if (strcmp(name, process_filter_user) == 0) {
+      snprintf(ini_data->options->filter_user_name, sizeof(ini_data->options->filter_user_name), "%s", value);
     }
     if (strcmp(name, process_value_sortby) == 0) {
       for (enum process_field i = process_pid; i < process_field_count; ++i) {
@@ -430,6 +455,9 @@ bool save_interface_options_to_config_file(unsigned total_dev_count, const nvtop
   fprintf(config_file, "\n[%s]\n", process_list_section);
   fprintf(config_file, "%s = %s\n", process_hide_nvtop_process_list, boolean_string(options->hide_processes_list));
   fprintf(config_file, "%s = %s\n", process_hide_nvtop_process, boolean_string(options->filter_nvtop_pid));
+  fprintf(config_file, "%s = %s\n", process_show_graphical, boolean_string(options->show_graphical_processes));
+  fprintf(config_file, "%s = %s\n", process_show_compute, boolean_string(options->show_compute_processes));
+  fprintf(config_file, "%s = %s\n", process_filter_user, options->filter_user_name);
   fprintf(config_file, "%s = %s\n", process_value_sort_order,
           options->sort_descending_order ? process_sort_descending : process_sort_ascending);
   fprintf(config_file, "%s = %s\n", process_value_sortby, process_sortby_vals[options->sort_processes_by]);
