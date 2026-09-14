@@ -73,10 +73,10 @@ void draw_shortcut_bar_hostname(WINDOW *win) {
   int cur_row, cur_col;
   getyx(win, cur_row, cur_col);
   (void)cur_row;
-  // Two blank columns on each side. The trailing ones also keep the write away from the
-  // bottom-right corner, where ncurses cannot place a character.
-  int start_col = cols - (int)strlen(nvtop_hostname) - 2;
-  // Drop the hostname entirely rather than overwrite the shortcuts
+  // One blank column before the right border, which also keeps the write off the bottom-right
+  // cell, where ncurses has to resort to an insert-character to avoid wrapping.
+  int start_col = cols - (int)strlen(nvtop_hostname) - 1;
+  // Keep two blank columns after the shortcuts, and drop the hostname rather than overwrite them
   if (start_col - 2 < cur_col)
     return;
   wattr_set(win, A_NORMAL, magenta_color, NULL);
