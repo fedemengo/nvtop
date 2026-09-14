@@ -48,6 +48,42 @@ static unsigned int sizeof_device_field[device_field_count] = {
     [device_l2features] = 11, [device_execengines] = 11,
 };
 
+// Hostname shown at the right end of the shortcut bar, '@' prefixed. Resolved once, on first draw.
+// NVTOP_HOSTNAME overrides it; setting it empty hides the hostname altogether.
+static char nvtop_hostname[257];
+static bool nvtop_hostname_resolved = false;
+
+void draw_shortcut_bar_hostname(WINDOW *win) {
+  if (!nvtop_hostname_resolved) {
+    const char *hostname_override = getenv("NVTOP_HOSTNAME");
+    nvtop_hostname[0] = '@';
+    if (hostname_override)
+      snprintf(nvtop_hostname + 1, sizeof(nvtop_hostname) - 1, "%s", hostname_override);
+    else if (gethostname(nvtop_hostname + 1, sizeof(nvtop_hostname) - 1) != 0)
+      nvtop_hostname[1] = '\0';
+    // gethostname is allowed to truncate without terminating the string
+    nvtop_hostname[sizeof(nvtop_hostname) - 1] = '\0';
+    nvtop_hostname_resolved = true;
+  }
+  if (nvtop_hostname[1] == '\0')
+    return;
+  int rows, cols;
+  getmaxyx(win, rows, cols);
+  (void)rows;
+  int cur_row, cur_col;
+  getyx(win, cur_row, cur_col);
+  (void)cur_row;
+  // One blank column before the right border, which also keeps the write off the bottom-right
+  // cell, where ncurses has to resort to an insert-character to avoid wrapping.
+  int start_col = cols - (int)strlen(nvtop_hostname) - 1;
+  // Keep two blank columns after the shortcuts, and drop the hostname rather than overwrite them
+  if (start_col - 2 < cur_col)
+    return;
+  wattr_set(win, A_NORMAL, magenta_color, NULL);
+  mvwprintw(win, 0, start_col, "%s", nvtop_hostname);
+  wstandend(win);
+}
+
 static unsigned int sizeof_process_field[process_field_count] = {
     [process_pid] = 7,       [process_user] = 4,          [process_gpu_id] = 3,   [process_type] = 8,
     [process_gpu_rate] = 4,  [process_enc_rate] = 4,      [process_dec_rate] = 4,
@@ -1023,10 +1059,10 @@ static int compare_gpu_asc(const void *pp1, const void *pp2) { return -compare_g
 static int compare_process_type_desc(const void *pp1, const void *pp2) {
   const struct gpuid_and_process *p1 = (const struct gpuid_and_process *)pp1;
   const struct gpuid_and_process *p2 = (const struct gpuid_and_process *)pp2;
-  return (p1->process->type == gpu_process_graphical) != (p2->process->type == gpu_process_graphical);
+  return (int)p2->process->type - (int)p1->process->type;
 }
 
-static int compare_process_type_asc(const void *pp1, const void *pp2) { return -compare_process_name_desc(pp1, pp2); }
+static int compare_process_type_asc(const void *pp1, const void *pp2) { return -compare_process_type_desc(pp1, pp2); }
 
 static int compare_process_gpu_rate_desc(const void *pp1, const void *pp2) {
   const struct gpuid_and_process *p1 = (const struct gpuid_and_process *)pp1;
@@ -1166,17 +1202,40 @@ static void sort_process(all_processes all_procs, enum process_field criterion, 
   qsort(all_procs.processes, all_procs.processes_count, sizeof(*all_procs.processes), sort_fun);
 }
 
-static void filter_out_nvtop_pid(all_processes *all_procs, struct nvtop_interface *interface) {
-  if (interface->options.filter_nvtop_pid) {
-    for (unsigned procId = 0; procId < all_procs->processes_count; ++procId) {
-      if (all_procs->processes[procId].process->pid == nvtop_pid) {
-        memmove(&all_procs->processes[procId], &all_procs->processes[procId + 1],
-                (all_procs->processes_count - procId - 1) * sizeof(*all_procs->processes));
-        all_procs->processes_count = all_procs->processes_count - 1;
-        break;
-      }
-    }
+// The filter query is typed in the shortcut bar, hence the process list keeps its full width
+static bool process_option_window_is_open(const struct process_window *process) {
+  return process->option_window.state == nvtop_option_state_kill ||
+         process->option_window.state == nvtop_option_state_sort_by;
+}
+
+static bool process_matches_filter(const struct gpu_process *process, const char *filter) {
+  if (GPUINFO_PROCESS_FIELD_VALID(process, cmdline) && strcasestr(process->cmdline, filter))
+    return true;
+  if (GPUINFO_PROCESS_FIELD_VALID(process, user_name) && strcasestr(process->user_name, filter))
+    return true;
+  return false;
+}
+
+static void filter_processes(all_processes *all_procs, struct nvtop_interface *interface) {
+  const nvtop_interface_option *options = &interface->options;
+  unsigned type_mask = (options->show_graphical_processes ? gpu_process_graphical : 0) |
+                       (options->show_compute_processes ? gpu_process_compute : 0);
+  unsigned kept = 0;
+  for (unsigned procId = 0; procId < all_procs->processes_count; ++procId) {
+    struct gpu_process *process = all_procs->processes[procId].process;
+    if (options->filter_nvtop_pid && process->pid == nvtop_pid)
+      continue;
+    // Processes of unknown type are always shown, there is nothing to filter on
+    if (process->type != gpu_process_unknown && !(process->type & type_mask))
+      continue;
+    if (options->filter_user_name[0] && (!GPUINFO_PROCESS_FIELD_VALID(process, user_name) ||
+                                         strcmp(process->user_name, options->filter_user_name) != 0))
+      continue;
+    if (interface->process.filter[0] && !process_matches_filter(process, interface->process.filter))
+      continue;
+    all_procs->processes[kept++] = all_procs->processes[procId];
   }
+  all_procs->processes_count = kept;
 }
 
 static const char *columnName[process_field_count] = {
@@ -1207,8 +1266,7 @@ static char process_print_buffer[process_buffer_line_size];
 
 static void print_processes_on_screen(all_processes all_procs, struct process_window *process,
                                       enum process_field sort_criterion, process_field_displayed fields_to_display) {
-  WINDOW *win = process->option_window.state == nvtop_option_state_hidden ? process->process_win
-                                                                          : process->process_with_option_win;
+  WINDOW *win = process_option_window_is_open(process) ? process->process_with_option_win : process->process_win;
   struct gpuid_and_process *processes = all_procs.processes;
 
   unsigned int rows, cols;
@@ -1431,11 +1489,11 @@ static void draw_processes(struct list_head *devices, struct nvtop_interface *in
     wclear(interface->process.process_with_option_win);
     wnoutrefresh(interface->process.option_window.option_win);
   }
-  if (interface->process.option_window.state != nvtop_option_state_hidden)
+  if (process_option_window_is_open(&interface->process))
     update_process_option_win(interface);
 
   all_processes all_procs = all_processes_array(devices);
-  filter_out_nvtop_pid(&all_procs, interface);
+  filter_processes(&all_procs, interface);
   sort_process(all_procs, interface->options.sort_processes_by, !interface->options.sort_descending_order);
 
   if (all_procs.processes_count > 0) {
@@ -1596,10 +1654,10 @@ static void update_process_option_win(struct nvtop_interface *interface) {
 }
 
 static const char *option_selection_hidden[] = {
-    "Setup", "Sort", "Kill", "Quit", "Save Config",
+    "Setup", "Filter", "Sort", "Kill", "Quit", "Save Config",
 };
 static const char *option_selection_hidden_num[] = {
-    "2", "6", "9", "10", "12",
+    "2", "4", "6", "9", "10", "12",
 };
 
 static const char *option_selection_sort[][2] = {
@@ -1617,7 +1675,8 @@ static const char *option_selection_kill[][2] = {
 static const unsigned int option_selection_width = 8;
 
 static void draw_process_shortcuts(struct nvtop_interface *interface) {
-  if (interface->process.option_window.state == interface->process.option_window.previous_state)
+  if (interface->process.option_window.state == interface->process.option_window.previous_state &&
+      interface->process.option_window.state != nvtop_option_state_filter)
     return;
   WINDOW *win = interface->shortcut_window;
   enum nvtop_option_window_state current_state = interface->process.option_window.state;
@@ -1625,30 +1684,45 @@ static void draw_process_shortcuts(struct nvtop_interface *interface) {
   switch (current_state) {
   case nvtop_option_state_hidden:
     for (size_t i = 0; i < ARRAY_SIZE(option_selection_hidden); ++i) {
-      if (interface->options.hide_processes_list &&
-          (strcmp(option_selection_hidden_num[i], "6") == 0 || strcmp(option_selection_hidden_num[i], "9") == 0))
+      // Filter, Sort and Kill are meaningless without a process list on screen
+      const char *num = option_selection_hidden_num[i];
+      bool needs_process_list = strcmp(num, "4") == 0 || strcmp(num, "6") == 0 || strcmp(num, "9") == 0;
+      if (needs_process_list && (interface->options.hide_processes_list ||
+                                 process_field_displayed_count(interface->options.process_fields_displayed) == 0))
         continue;
 
-      if (process_field_displayed_count(interface->options.process_fields_displayed) > 0 || (i != 1 && i != 2)) {
-        wprintw(win, "F%s", option_selection_hidden_num[i]);
-        wattr_set(win, A_STANDOUT, cyan_color, NULL);
-        wprintw(win, "%-*s", option_selection_width, option_selection_hidden[i]);
-        wstandend(win);
-      }
+      wprintw(win, "F%s: ", num);
+      wattr_set(win, A_NORMAL, cyan_color, NULL);
+      wprintw(win, "%-*s", option_selection_width, option_selection_hidden[i]);
+      wstandend(win);
     }
+    if (interface->process.filter[0]) {
+      wprintw(win, "  Filter: ");
+      wattr_set(win, A_NORMAL, cyan_color, NULL);
+      wprintw(win, "%s", interface->process.filter);
+      wstandend(win);
+    }
+    break;
+  case nvtop_option_state_filter:
+    wprintw(win, "Filter: ");
+    wattr_set(win, A_STANDOUT, cyan_color, NULL);
+    // The trailing space stands for the cursor
+    wprintw(win, "%s ", interface->process.filter);
+    wstandend(win);
+    wprintw(win, "  Enter: Apply  ESC: Clear");
     break;
   case nvtop_option_state_kill:
     for (size_t i = 0; i < ARRAY_SIZE(option_selection_kill); ++i) {
-      wprintw(win, "%s", option_selection_kill[i][0]);
-      wattr_set(win, A_STANDOUT, cyan_color, NULL);
+      wprintw(win, "%s: ", option_selection_kill[i][0]);
+      wattr_set(win, A_NORMAL, cyan_color, NULL);
       wprintw(win, "%-*s", option_selection_width, option_selection_kill[i][1]);
       wstandend(win);
     }
     break;
   case nvtop_option_state_sort_by:
     for (size_t i = 0; i < ARRAY_SIZE(option_selection_sort); ++i) {
-      wprintw(win, "%s", option_selection_sort[i][0]);
-      wattr_set(win, A_STANDOUT, cyan_color, NULL);
+      wprintw(win, "%s: ", option_selection_sort[i][0]);
+      wattr_set(win, A_NORMAL, cyan_color, NULL);
       wprintw(win, "%-*s", option_selection_width, option_selection_sort[i][1]);
       wstandend(win);
     }
@@ -1657,10 +1731,7 @@ static void draw_process_shortcuts(struct nvtop_interface *interface) {
     break;
   }
   wclrtoeol(win);
-  unsigned int cur_col, tmp;
-  (void)tmp;
-  getyx(win, tmp, cur_col);
-  mvwchgat(win, 0, cur_col, -1, A_STANDOUT, cyan_color, NULL);
+  draw_shortcut_bar_hostname(win);
   wnoutrefresh(win);
   interface->process.option_window.previous_state = current_state;
 }
@@ -1900,12 +1971,63 @@ static void option_change_sort(struct nvtop_interface *interface) {
   }
 }
 
+// While the filter is being typed every key edits the query, only the process list selection keeps moving
+static void handle_process_filter_keypress(int keyId, struct nvtop_interface *interface) {
+  struct process_window *process = &interface->process;
+  size_t length = strlen(process->filter);
+  switch (keyId) {
+  case 27: // ESC
+    process->filter[0] = '\0';
+    process->option_window.state = nvtop_option_state_hidden;
+    break;
+  case '\n':
+  case KEY_ENTER:
+    process->option_window.state = nvtop_option_state_hidden;
+    break;
+  case KEY_BACKSPACE:
+  case 127:
+  case 8:
+    if (length)
+      process->filter[length - 1] = '\0';
+    break;
+  case KEY_UP:
+    if (process->selected_row != 0)
+      process->selected_row--;
+    break;
+  case KEY_DOWN:
+    process->selected_row++;
+    break;
+  default:
+    if (keyId >= ' ' && keyId <= '~' && length + 1 < sizeof(process->filter)) {
+      process->filter[length] = (char)keyId;
+      process->filter[length + 1] = '\0';
+    }
+    break;
+  }
+}
+
+bool interface_is_typing_filter(const struct nvtop_interface *interface) {
+  return !interface->setup_win.visible && interface->process.option_window.state == nvtop_option_state_filter;
+}
+
 void interface_key(int keyId, struct nvtop_interface *interface) {
   if (interface->setup_win.visible) {
     handle_setup_win_keypress(keyId, interface);
     return;
   }
+  if (interface->process.option_window.state == nvtop_option_state_filter) {
+    handle_process_filter_keypress(keyId, interface);
+    return;
+  }
   switch (keyId) {
+  case KEY_F(4):
+  case '/':
+    if (!interface->options.hide_processes_list &&
+        process_field_displayed_count(interface->options.process_fields_displayed) > 0 &&
+        interface->process.option_window.state == nvtop_option_state_hidden) {
+      interface->process.option_window.state = nvtop_option_state_filter;
+    }
+    break;
   case KEY_F(2):
     if (interface->process.option_window.state == nvtop_option_state_hidden && !interface->setup_win.visible) {
       show_setup_window(interface);

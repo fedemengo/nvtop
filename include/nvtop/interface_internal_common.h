@@ -38,6 +38,7 @@ enum nvtop_option_window_state {
   nvtop_option_state_hidden,
   nvtop_option_state_kill,
   nvtop_option_state_sort_by,
+  nvtop_option_state_filter,
 };
 
 enum interface_color {
@@ -97,6 +98,7 @@ struct process_window {
   WINDOW *process_with_option_win;
   unsigned selected_row;
   pid_t selected_pid;
+  char filter[64]; // Live filter query, empty string when no process is filtered out
   struct option_window option_window;
 };
 
@@ -156,6 +158,9 @@ enum device_field {
   device_execengines,
   device_field_count,
 };
+
+// Draw the hostname right-aligned in the shortcut bar, if there is room left for it
+void draw_shortcut_bar_hostname(WINDOW *win);
 
 inline void set_attribute_between(WINDOW *win, int startY, int startX, int endX, attr_t attr, short pair) {
   int rows, cols;
