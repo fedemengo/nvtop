@@ -1216,6 +1216,21 @@ static bool process_matches_filter(const struct gpu_process *process, const char
   return false;
 }
 
+// Names in the comma separated list are matched exactly, spaces after a comma are skipped
+static bool user_in_list(const char *user, const char *list) {
+  size_t user_len = strlen(user);
+  for (const char *name = list; *name;) {
+    name += strspn(name, " ");
+    size_t name_len = strcspn(name, ",");
+    if (name_len == user_len && strncmp(name, user, user_len) == 0)
+      return true;
+    name += name_len;
+    if (*name == ',')
+      name++;
+  }
+  return false;
+}
+
 static void filter_processes(all_processes *all_procs, struct nvtop_interface *interface) {
   const nvtop_interface_option *options = &interface->options;
   unsigned type_mask = (options->show_graphical_processes ? gpu_process_graphical : 0) |
@@ -1230,6 +1245,9 @@ static void filter_processes(all_processes *all_procs, struct nvtop_interface *i
       continue;
     if (options->filter_user_name[0] && (!GPUINFO_PROCESS_FIELD_VALID(process, user_name) ||
                                          strcmp(process->user_name, options->filter_user_name) != 0))
+      continue;
+    if (options->hide_user_names[0] && GPUINFO_PROCESS_FIELD_VALID(process, user_name) &&
+        user_in_list(process->user_name, options->hide_user_names))
       continue;
     if (interface->process.filter[0] && !process_matches_filter(process, interface->process.filter))
       continue;

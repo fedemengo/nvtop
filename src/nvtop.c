@@ -78,7 +78,8 @@ static const char helpstring[] = "Available options:\n"
                                  "(useful for scripting)\n"
                                  "  -l --loop         : Output the current gpu stats without ncurses in a loop\n"
                                  "  -t --type         : Show only processes of this type: graphics, compute or all\n"
-                                 "  -u --user         : Show only the processes of this user\n";
+                                 "  -u --user         : Show only the processes of this user\n"
+                                 "  -U --hide-user    : Hide the processes of these comma separated users\n";
 
 static const char versionString[] = "nvtop version " NVTOP_VERSION_STRING;
 
@@ -99,10 +100,11 @@ static const struct option long_opts[] = {
     {.name = "loop", .has_arg = no_argument, .flag = NULL, .val = 'l'},
     {.name = "type", .has_arg = required_argument, .flag = NULL, .val = 't'},
     {.name = "user", .has_arg = required_argument, .flag = NULL, .val = 'u'},
+    {.name = "hide-user", .has_arg = required_argument, .flag = NULL, .val = 'U'},
     {0, 0, 0, 0},
 };
 
-static const char opts[] = "hvd:c:CfE:pPrislt:u:";
+static const char opts[] = "hvd:c:CfE:pPrislt:u:U:";
 
 int main(int argc, char **argv) {
   (void)setlocale(LC_CTYPE, "");
@@ -122,6 +124,7 @@ int main(int argc, char **argv) {
   double encode_decode_hide_time = -1.;
   char *custom_config_file_path = NULL;
   char *filter_user_option = NULL;
+  char *hide_users_option = NULL;
   bool show_graphical_option = true, show_compute_option = true, filter_type_option_set = false;
   while (true) {
     int optchar = getopt_long(argc, argv, opts, long_opts, NULL);
@@ -200,6 +203,9 @@ int main(int argc, char **argv) {
       break;
     case 'u':
       filter_user_option = optarg;
+      break;
+    case 'U':
+      hide_users_option = optarg;
       break;
     case ':':
     case '?':
@@ -322,6 +328,8 @@ int main(int argc, char **argv) {
   if (filter_user_option)
     snprintf(allDevicesOptions.filter_user_name, sizeof(allDevicesOptions.filter_user_name), "%s",
              filter_user_option);
+  if (hide_users_option)
+    snprintf(allDevicesOptions.hide_user_names, sizeof(allDevicesOptions.hide_user_names), "%s", hide_users_option);
   if (encode_decode_timer_option_set) {
     allDevicesOptions.encode_decode_hiding_timer = encode_decode_hide_time;
     if (allDevicesOptions.encode_decode_hiding_timer < 0.)

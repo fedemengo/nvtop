@@ -52,6 +52,7 @@ typedef struct nvtop_interface_option_struct {
   bool show_graphical_processes;                    // Show the processes doing graphics work
   bool show_compute_processes;                      // Show the processes doing compute work
   char filter_user_name[64];                        // Show only this user processes, empty string for all users
+  char hide_user_names[256];                        // Comma separated users whose processes are hidden
   bool has_monitored_set_changed;                   // True if the set of monitored gpu was modified through the interface
   bool has_gpu_info_bar;                            // Show info bar with additional GPU parameters
   bool hide_processes_list;                         // Hide processes list

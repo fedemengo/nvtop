@@ -45,6 +45,9 @@ Show only the processes of the given type: \fBgraphics\fR, \fBcompute\fR or \fBa
 .BR \-u ", " \-\-user =\fIusername\fR
 Show only the processes belonging to \fIusername\fR.
 .TP
+.BR \-U ", " \-\-hide\-user =\fIuser1,user2\fR
+Hide the processes belonging to any user of the comma separated list.
+.TP
 .BR \-v ", " \-\-version
 Print the version and exit.
 
